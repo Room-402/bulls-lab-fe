@@ -1,29 +1,55 @@
 import { useState } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { loginUser } from "@/services/auth"
+import { localStorageService } from "@/services/localStorageService"
+
 import login_background from '@/assets/login_background.png'
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 
 
 
 
-function Login(){
-  
-  
+function Login() {
+
+
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
-  
-  const handleSubmit = (e) => {
-  e.preventDefault() // stop refresh
 
-  console.log("Username:", username)
-  console.log("Password:", password)
-}
 
-  
-  
-  return(
+  const handleSubmit = async (e) => {
+    e.preventDefault() // stop refresh
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await loginUser({
+        email: username,
+        password: password,
+      })
+      console.log("headers", response.header)
+      // suppose backend sends token
+      localStorageService.setToken(response.headers.get("authorization"));
+      localStorageService.setUser(response.data.user);
+
+      console.log("response", response);
+      console.log("Login success")
+
+      // later → redirect user
+    } catch (err) {
+      console.log("error", err, response)
+      setError("Invalid credentials")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+
+
+  return (
     <>
       <div className="flex h-screen overflow-hidden">
         <div className="w-1/2 bg-gray-100">
@@ -34,12 +60,12 @@ function Login(){
 
               <Field>
                 <FieldLabel htmlFor="input-field-username">Username</FieldLabel>
-                <Input 
-                id="input-field-username"
-                type="text"
-                placeholder="Enter your username or email" 
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                <Input
+                  id="input-field-username"
+                  type="text"
+                  placeholder="Enter your username or email"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                 />
                 {/*<FieldDescription>
                 Choose a unique username for your account.
@@ -47,19 +73,21 @@ function Login(){
               </Field>
               <Field>
                 <FieldLabel htmlFor="password">password</FieldLabel>
-                <Input 
-                id="password"
-                type="password"
-                placeholder="Enter your  password" 
-                value={password}
-                onChange={(e)=>setPassword(e.target.value)}
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your  password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                 />
+                {error && <p className="text-red-500 text-sm">{error}</p>}
                 {/*<FieldDescription>
                 Choose a unique username for your account.
                 </FieldDescription>*/}
-                <Button type="submit" className="w-full">
-                Login
-              </Button>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Logging in..." : "Login"}
+                </Button>
+
               </Field>
             </form>
           </div>
