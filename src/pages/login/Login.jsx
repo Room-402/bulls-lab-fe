@@ -35,7 +35,7 @@ function Login() {
       console.log("response", response)
       console.log("Login success")
 
-      // later → redirect user to dashboard
+      navigate("/markets") // ← redirect after login
     } catch (err) {
       console.log("error", err)
       setError("Invalid credentials")
