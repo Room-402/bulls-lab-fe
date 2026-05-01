@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef } from "react"
+import { useNavigate } from "react-router-dom"
 import { watchlistService } from "../../services/watchlist"
+import { getStockDetailsBatch } from "@/services/marketService"
+import StockSearch from "@/components/StockSearch"
 
 /* ─── STOCK DETAIL PANEL ─────────────────────────────────────────────────── */
-function StockDetail({ ticker }) {
+function StockDetail({ ticker, marketData, onViewFull }) {
+  const info = marketData || {}
+  const hasPrice = info.price != null
   return (
     <div className="wl-detail">
       <div className="wl-detail-header">
@@ -11,33 +16,43 @@ function StockDetail({ ticker }) {
             {ticker}
             <span className="wl-badge">NSE</span>
           </div>
-          <div className="wl-detail-name">Live market data coming soon</div>
+          <div className="wl-detail-name">{info.company_name || "—"}</div>
         </div>
-        <div className="wl-buysell">
-          <button className="btn-buy">BUY</button>
-          <button className="btn-sell">SELL</button>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "auto" }}>
+          {onViewFull && (
+            <button className="btn-view-full" onClick={onViewFull}>View Full Details →</button>
+          )}
+          <div className="wl-buysell">
+            <button className="btn-buy">BUY</button>
+            <button className="btn-sell">SELL</button>
+          </div>
         </div>
       </div>
-      <div style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "0.75rem",
-        color: "#d1d5db",
-      }}>
-        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-        </svg>
-        <p style={{ fontSize: "0.82rem", color: "#9ca3af" }}>Live pricing will be available soon</p>
-      </div>
+      {hasPrice ? (
+        <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: "2rem", fontWeight: 700, color: "#111827" }}>
+            ₹{Number(info.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+          </div>
+          <div style={{ display: "flex", gap: "2rem", fontSize: "0.78rem", color: "#6b7280" }}>
+            <span>Day Low: <strong style={{ color: "#dc2626" }}>₹{info.day_low ?? "—"}</strong></span>
+            <span>Day High: <strong style={{ color: "#059669" }}>₹{info.day_high ?? "—"}</strong></span>
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.75rem", color: "#d1d5db" }}>
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          <p style={{ fontSize: "0.82rem", color: "#9ca3af" }}>Market data unavailable</p>
+        </div>
+      )}
     </div>
   )
 }
 
 /* ─── WATCHLIST PAGE ─────────────────────────────────────────────────────── */
 export default function Watchlist() {
+  const navigate = useNavigate()
   const [watchlists, setWatchlists] = useState([])
   const [selectedWL, setSelectedWL] = useState(null)
   const [selectedTicker, setSelectedTicker] = useState(null)
@@ -51,9 +66,11 @@ export default function Watchlist() {
   const [creatingWL, setCreatingWL] = useState(false)
   const [newWLName, setNewWLName] = useState("")
 
-  // Stock management
-  const [addTicker, setAddTicker] = useState("")
+  // Stock management — no more plain text input
   const [addingStock, setAddingStock] = useState(false)
+
+  // Batch market data from market-service
+  const [marketData, setMarketData] = useState({}) // { TICKER: { price, day_high, ... } }
 
   const menuRef = useRef(null)
 
@@ -70,6 +87,20 @@ export default function Watchlist() {
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
+
+  // Fetch batch market data when selected watchlist changes
+  useEffect(() => {
+    async function fetchMarketData() {
+      const activeStks = selectedWL?.stocks?.filter(s => s.active) || []
+      if (activeStks.length === 0) { setMarketData({}); return }
+      const symbols = activeStks.map(s => s.stock_ticker)
+      try {
+        const data = await getStockDetailsBatch(symbols)
+        setMarketData(data)
+      } catch { setMarketData({}) }
+    }
+    fetchMarketData()
+  }, [selectedWL])
 
   async function fetchWatchlists() {
     try {
@@ -130,16 +161,15 @@ export default function Watchlist() {
     }
   }
 
-  async function handleAddStock() {
-    if (!addTicker.trim() || !selectedWL) return
-    const ticker = addTicker.trim().toUpperCase()
+  async function handleSearchAddStock(item) {
+    if (!selectedWL) return
+    const ticker = item.ticker.toUpperCase()
     try {
       setAddingStock(true)
       const { data } = await watchlistService.addStock(selectedWL.id, ticker)
       const existingStocks = selectedWL.stocks || []
       const without = existingStocks.filter(s => s.stock_ticker !== ticker)
       syncWL({ ...selectedWL, stocks: [...without, data] })
-      setAddTicker("")
     } catch (e) {
       alert(e.response?.data?.error || "Failed to add stock")
     } finally {
@@ -178,13 +208,12 @@ export default function Watchlist() {
 
         /* ── Sidebar ── */
         .wl-list {
-          width: 240px;
+          width: 340px;
           flex-shrink: 0;
           background: #ffffff;
           border-right: 1px solid #e5e7eb;
           display: flex;
           flex-direction: column;
-          overflow: hidden;
         }
 
         /* ── Watchlist selector ── */
@@ -466,6 +495,21 @@ export default function Watchlist() {
         .btn-buy  { background: #059669; color: #fff; }
         .btn-sell { background: #dc2626; color: #fff; }
         .btn-buy:hover, .btn-sell:hover { opacity: 0.88; }
+        .btn-view-full {
+          font-family: 'Syne', sans-serif; font-size: 0.7rem; font-weight: 700;
+          background: #f3f4f6; color: #059669; border: 1px solid #e5e7eb;
+          padding: 0.35rem 0.9rem; border-radius: 6px; cursor: pointer;
+          transition: background 0.15s; white-space: nowrap;
+        }
+        .btn-view-full:hover { background: #ecfdf5; border-color: #a7f3d0; }
+        .wl-search-full { flex: 1 1 100%; min-width: 0; }
+        /* Make search dropdown open upward since search is at the bottom */
+        .wl-add-stock .ss-dropdown {
+          top: auto;
+          bottom: calc(100% + 6px);
+          z-index: 300;
+          min-width: 300px;
+        }
 
         /* Empty / loading states */
         .wl-center-state {
@@ -624,51 +668,63 @@ export default function Watchlist() {
             ) : !selectedWL ? (
               <div className="wl-empty-msg">Create a watchlist to begin</div>
             ) : activeStocks.length === 0 ? (
-              <div className="wl-empty-msg">No stocks yet — add one below</div>
+              <div className="wl-empty-msg">No stocks yet — search below to add</div>
             ) : (
-              activeStocks.map(stock => (
-                <div
-                  key={stock.id}
-                  className={`wl-stock-row ${selectedTicker === stock.stock_ticker ? "active" : ""}`}
-                  onClick={() => setSelectedTicker(stock.stock_ticker)}
-                >
-                  <div className="wl-row-sym">{stock.stock_ticker}</div>
-                  <button
-                    className="wl-row-del"
-                    title="Remove"
-                    onClick={e => { e.stopPropagation(); handleRemoveStock(stock) }}
+              activeStocks.map(stock => {
+                const md = marketData[stock.stock_ticker] || marketData[stock.stock_ticker?.split(".")[0]] || {}
+                return (
+                  <div
+                    key={stock.id}
+                    className={`wl-stock-row ${selectedTicker === stock.stock_ticker ? "active" : ""}`}
+                    onClick={() => navigate(`/stock/${stock.stock_ticker}`)}
                   >
-                    ×
-                  </button>
-                </div>
-              ))
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="wl-row-sym">{stock.stock_ticker}</div>
+                      {md.company_name && (
+                        <div style={{ fontSize: "0.62rem", color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {md.company_name}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                      {md.price != null && (
+                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "0.72rem", fontWeight: 600, color: "#111827" }}>
+                          ₹{Number(md.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        </span>
+                      )}
+                      <button
+                        className="wl-row-del"
+                        title="Remove"
+                        onClick={e => { e.stopPropagation(); handleRemoveStock(stock) }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                )
+              })
             )}
           </div>
 
-          {/* Add stock */}
+          {/* Add stock via search */}
           {selectedWL && (
             <div className="wl-add-stock">
-              <input
-                className="wl-add-input"
-                placeholder="Add ticker..."
-                value={addTicker}
-                onChange={e => setAddTicker(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleAddStock()}
+              <StockSearch
+                onSelect={handleSearchAddStock}
+                placeholder="Search to add stock…"
+                className="wl-search-full"
               />
-              <button
-                className="wl-add-btn"
-                onClick={handleAddStock}
-                disabled={addingStock || !addTicker.trim()}
-              >
-                {addingStock ? "..." : "Add"}
-              </button>
             </div>
           )}
         </div>
 
         {/* ── Right panel ── */}
         {selectedTicker ? (
-          <StockDetail ticker={selectedTicker} />
+          <StockDetail
+            ticker={selectedTicker}
+            marketData={marketData[selectedTicker] || marketData[selectedTicker?.split(".")[0]] || {}}
+            onViewFull={() => navigate(`/stock/${selectedTicker}`)}
+          />
         ) : (
           <div className="wl-center-state">
             {!loading && watchlists.length === 0 ? (
