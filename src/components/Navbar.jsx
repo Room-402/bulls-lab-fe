@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { NavLink, useNavigate } from "react-router-dom"
 import { localStorageService } from "@/services/localStorageService"
+import StockSearch from "@/components/StockSearch"
 
 const INDICES = [
   { name: "NIFTY",  value: "25,571.25", change: "+116.90", changePct: "+0.46%", positive: true },
@@ -123,6 +124,8 @@ export default function Navbar() {
             </NavLink>
           ))}
         </div>
+
+        <StockSearch />
 
         <div className="navbar-actions">
           <div className="live-badge"><div className="live-dot" />LIVE</div>
