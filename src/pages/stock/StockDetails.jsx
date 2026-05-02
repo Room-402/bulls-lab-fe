@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { getStockDetails } from "@/services/marketService"
 import { watchlistService } from "@/services/watchlist"
+import OrderModal from "@/components/OrderModal"
 
 /* ── tiny helpers ── */
 function fmt(n, decimals = 2) {
@@ -27,6 +28,9 @@ export default function StockDetails() {
   const [stock, setStock] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Order Placement Modal
+  const [orderModal, setOrderModal] = useState({ open: false, action: 'BUY' })
 
   // Watchlist add-to dropdown
   const [watchlists, setWatchlists] = useState([])
@@ -245,6 +249,33 @@ export default function StockDetails() {
           transition: background 0.15s, border-color 0.15s;
         }
         .sd-wl-btn:hover { background: #d1fae5; border-color: #6ee7b7; }
+
+        /* ── action buttons ── */
+        .sd-actions {
+          display: flex; gap: 0.75rem; align-items: center;
+        }
+        .sd-btn-buy {
+          background: #059669; color: #fff; border: none;
+          padding: 10px 32px; border-radius: 10px; font-weight: 700;
+          font-family: 'Syne', sans-serif; font-size: 0.85rem;
+          cursor: pointer; transition: all 0.2s;
+          box-shadow: 0 4px 12px rgba(5,150,105,0.2);
+          text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .sd-btn-buy:hover { background: #047857; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(5,150,105,0.3); }
+        .sd-btn-buy:active { transform: translateY(0); }
+
+        .sd-btn-sell {
+          background: #dc2626; color: #fff; border: none;
+          padding: 10px 32px; border-radius: 10px; font-weight: 700;
+          font-family: 'Syne', sans-serif; font-size: 0.85rem;
+          cursor: pointer; transition: all 0.2s;
+          box-shadow: 0 4px 12px rgba(220,38,38,0.2);
+          text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .sd-btn-sell:hover { background: #b91c1c; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(220,38,38,0.3); }
+        .sd-btn-sell:active { transform: translateY(0); }
+
         .sd-wl-dropdown {
           position: absolute; top: calc(100% + 6px); right: 0;
           background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
@@ -350,14 +381,20 @@ export default function StockDetails() {
                 </div>
               )}
 
-              <div className="sd-price-hero">
-                <span className="sd-price">₹{Number(stock.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
-                {priceChange != null && (
-                  <span className={`sd-change ${isPositive ? "positive" : "negative"}`}>
-                    {isPositive ? "▲" : "▼"} {Math.abs(priceChange).toFixed(2)}
-                    {priceChangePct != null && ` (${Math.abs(priceChangePct).toFixed(2)}%)`}
-                  </span>
-                )}
+              <div className="sd-price-hero" style={{ justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem' }}>
+                  <span className="sd-price">₹{Number(stock.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                  {priceChange != null && (
+                    <span className={`sd-change ${isPositive ? "positive" : "negative"}`}>
+                      {isPositive ? "▲" : "▼"} {Math.abs(priceChange).toFixed(2)}
+                      {priceChangePct != null && ` (${Math.abs(priceChangePct).toFixed(2)}%)`}
+                    </span>
+                  )}
+                </div>
+                <div className="sd-actions">
+                  <button className="sd-btn-buy" onClick={() => setOrderModal({ open: true, action: 'BUY' })}>Buy</button>
+                  <button className="sd-btn-sell" onClick={() => setOrderModal({ open: true, action: 'SELL' })}>Sell</button>
+                </div>
               </div>
             </div>
 
@@ -498,6 +535,15 @@ export default function StockDetails() {
           ✓ Added to {watchlists.find(w => w.id === addedToWl)?.name || "watchlist"}
         </div>
       )}
+
+      {/* Order Modal */}
+      <OrderModal
+        isOpen={orderModal.open}
+        onClose={() => setOrderModal({ ...orderModal, open: false })}
+        stock={stock || { symbol: (d.symbol || symbol).toUpperCase(), exchange: d.exchange }}
+        initialAction={orderModal.action}
+        currentPrice={stock?.price}
+      />
     </>
   )
 }
