@@ -9,6 +9,7 @@ import Portfolio, { PortfolioOverview, PortfolioEquity } from "./pages/portfolio
 import Watchlist from "./pages/watchlist/Watchlist.jsx"
 import Account, { AccountOverview, AccountReports, AccountIncentives, AccountSettings } from "./pages/account/Account.jsx"
 import StockDetails from "./pages/stock/StockDetails.jsx"
+import Positions from "./pages/positions/Positions.jsx"
 
 const Page = ({ name }) => (
   <div style={{ padding: "2rem", color: "#111827", fontFamily: "sans-serif", background: "#f9fafb", minHeight: "calc(100vh - 56px)" }}>
@@ -43,7 +44,7 @@ function App() {
         <Route path="/stock/:symbol" element={<AppLayout><StockDetails /></AppLayout>} />
         <Route path="/markets"   element={<AppLayout><Page name="Markets" /></AppLayout>} />
         <Route path="/watchlist" element={<AppLayout><Watchlist /></AppLayout>} />
-        <Route path="/positions" element={<AppLayout><Page name="Positions" /></AppLayout>} />
+        <Route path="/positions" element={<AppLayout><Positions /></AppLayout>} />
         <Route path="/tools"     element={<AppLayout><Page name="Tools" /></AppLayout>} />
 
         {/* Portfolio */}

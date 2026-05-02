@@ -12,3 +12,15 @@ export async function createOrder(data) {
     body: JSON.stringify(data),
   })
 }
+
+/**
+ * Get orders by tab.
+ * GET /orders?tab={tab}
+ *
+ * @param {string} tab - The tab name (e.g., 'open', 'history', 'gtt', 'positions').
+ */
+export async function getOrdersByTab(tab = 'open') {
+  return apiRequest(`/orders?tab=${tab}`, {
+    method: "GET",
+  })
+}
