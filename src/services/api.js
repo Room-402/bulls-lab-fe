@@ -10,12 +10,26 @@ const api = axios.create({
   },
 })
 
-// Attach token automatically via interceptor
+// Attach token and user_id automatically via interceptor
 api.interceptors.request.use((config) => {
   const token = localStorageService.getToken()
   if (token) {
     config.headers["Authorization"] = `${token}`
   }
+
+  const user = localStorageService.getUser()
+  if (user?.id) {
+    if (config.method?.toUpperCase() === "GET") {
+      config.params = { ...config.params, user_id: user.id }
+    } else {
+      if (config.data && typeof config.data === "object") {
+        config.data = { ...config.data, user_id: user.id }
+      } else if (!config.data) {
+        config.data = { user_id: user.id }
+      }
+    }
+  }
+
   return config
 })
 
