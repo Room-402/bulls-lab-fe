@@ -5,19 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Field, FieldLabel } from "@/components/ui/field"
 
 import login_background from "@/assets/login_background.png"
-
-async function registerUser(data) {
-  const response = await fetch("http://localhost:8080/api/v1/users/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(err.message || "Registration failed")
-  }
-  return response
-}
+import { registerUser } from "@/services/auth"
 
 function Register() {
   const navigate = useNavigate()
