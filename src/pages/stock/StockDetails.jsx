@@ -121,6 +121,18 @@ export default function StockDetails() {
     return () => document.removeEventListener("mousedown", handleClick)
   }, [])
 
+  // Keyboard shortcuts: B = buy, S = sell (skip if focused on input)
+  useEffect(() => {
+    function handleKey(e) {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return
+      if (!stock) return
+      if (e.key === "b" || e.key === "B") setOrderModal({ open: true, action: "BUY" })
+      if (e.key === "s" || e.key === "S") setOrderModal({ open: true, action: "SELL" })
+    }
+    document.addEventListener("keydown", handleKey)
+    return () => document.removeEventListener("keydown", handleKey)
+  }, [stock])
+
   async function handleAddToWatchlist(wlId) {
     const ticker = (d.symbol || stock.symbol || symbol).toUpperCase()
     try {
@@ -518,8 +530,14 @@ export default function StockDetails() {
                   )}
                 </div>
                 <div className="sd-actions">
-                  <button className="sd-btn-buy" onClick={() => setOrderModal({ open: true, action: 'BUY' })}>Buy</button>
-                  <button className="sd-btn-sell" onClick={() => setOrderModal({ open: true, action: 'SELL' })}>Sell</button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
+                    <button className="sd-btn-buy" onClick={() => setOrderModal({ open: true, action: 'BUY' })}>Buy</button>
+                    <span style={{ fontSize: '0.6rem', color: '#9ca3af', fontFamily: "'DM Mono', monospace" }}>press B</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'center' }}>
+                    <button className="sd-btn-sell" onClick={() => setOrderModal({ open: true, action: 'SELL' })}>Sell</button>
+                    <span style={{ fontSize: '0.6rem', color: '#9ca3af', fontFamily: "'DM Mono', monospace" }}>press S</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -569,10 +587,24 @@ export default function StockDetails() {
                           tickFormatter={(val) => `₹${val}`}
                         />
                         <Tooltip
-                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                          labelStyle={{ fontFamily: 'DM Mono', fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}
-                          itemStyle={{ fontFamily: 'DM Mono', fontSize: '14px', color: '#111827', fontWeight: 600 }}
-                          formatter={(value) => [`₹${Number(value).toFixed(2)}`, "Price"]}
+                          contentStyle={{ borderRadius: '10px', border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: '0.75rem 1rem', fontFamily: "'DM Mono', monospace" }}
+                          labelStyle={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px', fontFamily: "'Syne', sans-serif", fontWeight: 700 }}
+                          content={({ active, payload, label }) => {
+                            if (!active || !payload || !payload.length) return null
+                            const d = payload[0]?.payload || {}
+                            return (
+                              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px', color: '#111827', minWidth: '140px' }}>
+                                <div style={{ fontSize: '11px', color: '#6b7280', fontFamily: "'Syne', sans-serif", fontWeight: 700, marginBottom: '6px' }}>{label}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', fontWeight: 700, fontSize: '14px', marginBottom: '6px' }}>
+                                  <span>₹{Number(d.price ?? d.close ?? 0).toFixed(2)}</span>
+                                </div>
+                                {d.open != null && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#6b7280', fontSize: '11px' }}><span>O</span><span>₹{Number(d.open).toFixed(2)}</span></div>}
+                                {d.high != null && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#059669', fontSize: '11px' }}><span>H</span><span>₹{Number(d.high).toFixed(2)}</span></div>}
+                                {d.low  != null && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#dc2626', fontSize: '11px' }}><span>L</span><span>₹{Number(d.low).toFixed(2)}</span></div>}
+                                {d.volume != null && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#9ca3af', fontSize: '11px', marginTop: '4px' }}><span>Vol</span><span>{Number(d.volume).toLocaleString('en-IN')}</span></div>}
+                              </div>
+                            )
+                          }}
                         />
                         <Area
                           type="monotone"

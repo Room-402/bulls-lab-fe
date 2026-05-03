@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useOutletContext } from "react-router-dom"
+import { ToastProvider } from "./components/Toast.jsx"
 
 import Login from "./pages/login/Login.jsx"
 import Register from "./pages/register/Register.jsx"
@@ -35,6 +36,7 @@ function AccountOverviewPage() {
 function App() {
   return (
     <BrowserRouter>
+    <ToastProvider>
       <Routes>
         {/* Auth */}
         <Route path="/login"    element={<Login />} />
@@ -76,6 +78,7 @@ function App() {
 
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
+    </ToastProvider>
     </BrowserRouter>
   )
 }

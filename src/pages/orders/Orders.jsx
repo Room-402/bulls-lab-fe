@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { NavLink } from "react-router-dom"
 import { Outlet, Navigate } from "react-router-dom"
 import { getOrdersByTab } from "../../services/orderService"
+import { SkeletonRow, skeletonCSS } from "../../components/Skeleton"
 
 const ORDER_TABS = [
   { label: "Open Orders",   to: "/orders/open" },
@@ -18,6 +19,7 @@ function OrdersSubNav() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700&display=swap');
 
+        ${skeletonCSS}
         .orders-subnav {
           background: #f9fafb;
           border-bottom: 1px solid #e5e7eb;
@@ -207,7 +209,18 @@ function OrderList({ tabName, title }) {
     <div className="orders-content">
       <h2>{title}</h2>
       {loading ? (
-        <div style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>Loading...</div>
+        <div className="order-table-container">
+          <table className="order-table">
+            <thead>
+              <tr>
+                <th>Time</th><th>Type</th><th>Instrument</th><th>Product</th><th>Qty</th><th>Avg. Price</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)}
+            </tbody>
+          </table>
+        </div>
       ) : orders.length === 0 ? (
         <EmptyState label={title.toLowerCase()} />
       ) : (

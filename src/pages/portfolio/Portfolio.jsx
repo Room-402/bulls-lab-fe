@@ -2,14 +2,28 @@ import { useState, useEffect, useMemo } from "react"
 import { NavLink, Outlet, useOutletContext } from "react-router-dom"
 import { portfolioService } from "../../services/portfolioService"
 import { getStockDetailsBatch } from "../../services/marketService"
+import { SkeletonCard, SkeletonRow, skeletonCSS } from "../../components/Skeleton"
 
 /* ─── HELPERS ────────────────────────────────────────────────────────────── */
 const fmt = (n) => Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })
 const fmtN = (n) => (n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })
 const pos = (n) => n >= 0
 
+function glColor(pct, isPositive) {
+  const abs = Math.min(Math.abs(pct || 0), 20)
+  const t = abs / 20
+  if (isPositive) {
+    const g = Math.round(130 + t * 70)
+    return `rgb(5, ${g}, 85)`
+  } else {
+    const r = Math.round(185 + t * 35)
+    return `rgb(${r}, 30, 30)`
+  }
+}
+
 /* ─── CSS ────────────────────────────────────────────────────────────────── */
 const CSS = `
+${skeletonCSS}
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@500;600;700&display=swap');
 
 .pf-wrap {
@@ -286,6 +300,45 @@ const CSS = `
 @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
 
 .loading { padding: 2rem; text-align: center; color: #6b7280; font-size: 0.8rem; }
+
+/* Mobile card collapse for holdings */
+@media (max-width: 700px) {
+  .h-table thead { display: none; }
+  .h-table, .h-table tbody, .h-table tr, .h-table td { display: block; width: 100%; }
+  .h-table tr {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .h-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: none;
+    padding: 0.3rem 0;
+    font-size: 0.78rem;
+    text-align: left;
+  }
+  .h-table td::before {
+    content: attr(data-label);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #9ca3af;
+    flex-shrink: 0;
+    margin-right: 0.5rem;
+  }
+  .h-table td:first-child { border-bottom: 1px solid #f3f4f6; padding-bottom: 0.5rem; margin-bottom: 0.25rem; }
+  .h-table td:first-child::before { display: none; }
+  .gl-cell { align-items: flex-end; }
+  .section { margin: 1.5rem 1rem 0; }
+  .stat-row { padding: 1.5rem 1rem 0; }
+}
 `
 
 /* ─── DONUT ──────────────────────────────────────────────────────────────── */
@@ -413,7 +466,13 @@ function usePortfolioData() {
 function PortfolioOverview() {
   const { invested, current, overallLoss, overallLossPct, loading } = useOutletContext()
 
-  if (loading) return <div className="loading">Loading portfolio...</div>
+  if (loading) return (
+    <div className="pf-wrap">
+      <div className="stat-row">
+        {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+      </div>
+    </div>
+  )
 
   // Mocking breakup to keep UI rich even if we only have equity right now
   const breakup = [
@@ -518,7 +577,28 @@ function PortfolioEquity() {
   const [driversTab, setDriversTab] = useState("losers")
   const { holdings, sectors, invested, current, overallLoss, overallLossPct, loading } = useOutletContext()
 
-  if (loading) return <div className="loading">Loading portfolio...</div>
+  if (loading) return (
+    <div className="pf-wrap">
+      <div className="stat-row">
+        {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+      </div>
+      <div className="section">
+        <div className="card" style={{ overflowX: "auto" }}>
+          <table className="h-table" style={{ minWidth: "900px" }}>
+            <thead>
+              <tr>
+                <th>Stock</th><th>Company</th><th>Qty</th><th>Avg. Price</th>
+                <th>LTP</th><th>Day H/L</th><th>P/E Ratio</th><th>Inv. Amt.</th><th>Current Val.</th><th>Overall G/L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={10} />)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
 
   // Generate top drivers
   const sortedByGl = [...holdings].sort((a, b) => b.glPct - a.glPct)
@@ -576,23 +656,23 @@ function PortfolioEquity() {
             <tbody>
               {holdings.map(h => (
                 <tr key={h.name}>
-                  <td><div className="stock-name">{h.name}</div></td>
-                  <td><div className="stock-company">{h.company || "-"}</div></td>
-                  <td>{h.qty}</td>
-                  <td>₹{fmtN(h.avg)}</td>
-                  <td>₹{fmtN(h.ltp)}</td>
-                  <td>
+                  <td data-label="Stock"><div className="stock-name">{h.name}</div></td>
+                  <td data-label="Company"><div className="stock-company">{h.company || "-"}</div></td>
+                  <td data-label="Qty">{h.qty}</td>
+                  <td data-label="Avg Price">₹{fmtN(h.avg)}</td>
+                  <td data-label="LTP">₹{fmtN(h.ltp)}</td>
+                  <td data-label="Day H/L">
                     <div className="muted" style={{ fontSize: "0.65rem" }}>
                       H: ₹{fmtN(h.dayHigh)}<br />L: ₹{fmtN(h.dayLow)}
                     </div>
                   </td>
-                  <td><span className="muted">{h.peRatio !== "-" ? fmtN(h.peRatio) : "-"}</span></td>
-                  <td>₹{fmtN(h.inv)}</td>
-                  <td>₹{fmtN(h.cur)}</td>
-                  <td>
+                  <td data-label="P/E"><span className="muted">{h.peRatio !== "-" ? fmtN(h.peRatio) : "-"}</span></td>
+                  <td data-label="Invested">₹{fmtN(h.inv)}</td>
+                  <td data-label="Current">₹{fmtN(h.cur)}</td>
+                  <td data-label="G/L">
                     <div className="gl-cell">
-                      <span className={pos(h.gl) ? "green" : "red"}>{pos(h.gl) ? "+" : "-"}₹{fmt(h.gl)}</span>
-                      <span className={`stat-sub ${pos(h.gl) ? "green" : "red"}`}>{pos(h.glPct) ? "+" : ""}{fmtN(h.glPct)}%</span>
+                      <span style={{ color: glColor(h.glPct, pos(h.gl)), fontWeight: 700 }}>{pos(h.gl) ? "+" : "-"}₹{fmt(h.gl)}</span>
+                      <span className="stat-sub" style={{ color: glColor(h.glPct, pos(h.gl)) }}>{pos(h.glPct) ? "+" : ""}{fmtN(h.glPct)}%</span>
                     </div>
                   </td>
                 </tr>

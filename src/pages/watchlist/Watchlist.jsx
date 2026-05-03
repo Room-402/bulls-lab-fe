@@ -3,11 +3,31 @@ import { useNavigate } from "react-router-dom"
 import { watchlistService } from "../../services/watchlist"
 import { getStockDetailsBatch } from "@/services/marketService"
 import StockSearch from "@/components/StockSearch"
+import OrderModal from "@/components/OrderModal"
+import { useToast } from "@/components/Toast"
+import { SkeletonLine, SkeletonBlock, skeletonCSS } from "@/components/Skeleton"
+
+/* ─── helpers ─────────────────────────────────────────────────────────────── */
+function glIntensityColor(pct, isPositive) {
+  const abs = Math.min(Math.abs(pct || 0), 15)
+  const t = abs / 15
+  if (isPositive) {
+    const g = Math.round(150 + t * 55)
+    return `rgb(5, ${g}, 105)`
+  } else {
+    const r = Math.round(180 + t * 42)
+    return `rgb(${r}, 38, 38)`
+  }
+}
 
 /* ─── STOCK DETAIL PANEL ─────────────────────────────────────────────────── */
-function StockDetail({ ticker, marketData, onViewFull }) {
+function StockDetail({ ticker, marketData, onViewFull, onTrade }) {
   const info = marketData || {}
   const hasPrice = info.price != null
+  const change = info.change ?? null
+  const changePct = info.change_percent ?? null
+  const isPos = changePct == null ? true : changePct >= 0
+
   return (
     <div className="wl-detail">
       <div className="wl-detail-header">
@@ -23,15 +43,31 @@ function StockDetail({ ticker, marketData, onViewFull }) {
             <button className="btn-view-full" onClick={onViewFull}>View Full Details →</button>
           )}
           <div className="wl-buysell">
-            <button className="btn-buy">BUY</button>
-            <button className="btn-sell">SELL</button>
+            <button className="btn-buy" onClick={() => onTrade && onTrade('BUY')}>BUY</button>
+            <button className="btn-sell" onClick={() => onTrade && onTrade('SELL')}>SELL</button>
           </div>
         </div>
       </div>
       {hasPrice ? (
         <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: "2rem", fontWeight: 700, color: "#111827" }}>
-            ₹{Number(info.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+          <div style={{ display: "flex", alignItems: "baseline", gap: "1rem", flexWrap: "wrap" }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: "2rem", fontWeight: 700, color: "#111827" }}>
+              ₹{Number(info.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+            </div>
+            {changePct != null && (
+              <span style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: "0.85rem",
+                fontWeight: 700,
+                padding: "3px 10px",
+                borderRadius: "6px",
+                background: isPos ? "#ecfdf5" : "#fef2f2",
+                color: glIntensityColor(changePct, isPos),
+              }}>
+                {isPos ? "▲" : "▼"} {Math.abs(changePct).toFixed(2)}%
+                {change != null && ` (${change > 0 ? "+" : ""}${Number(change).toFixed(2)})`}
+              </span>
+            )}
           </div>
           <div style={{ display: "flex", gap: "2rem", fontSize: "0.78rem", color: "#6b7280" }}>
             <span>Day Low: <strong style={{ color: "#dc2626" }}>₹{info.day_low ?? "—"}</strong></span>
@@ -50,27 +86,46 @@ function StockDetail({ ticker, marketData, onViewFull }) {
   )
 }
 
+/* ─── WATCHLIST SKELETON ─────────────────────────────────────────────────── */
+function WatchlistSkeleton() {
+  return (
+    <div style={{ padding: "0.5rem 0" }}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} style={{ padding: "0.65rem 1rem", borderBottom: "1px solid #f9fafb", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+          <div style={{ flex: 1 }}>
+            <SkeletonLine width={`${55 + (i % 3) * 15}%`} height="0.75rem" style={{ marginBottom: "0.3rem" }} />
+            <SkeletonLine width="40%" height="0.55rem" />
+          </div>
+          <SkeletonLine width="52px" height="0.7rem" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* ─── WATCHLIST PAGE ─────────────────────────────────────────────────────── */
 export default function Watchlist() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [watchlists, setWatchlists] = useState([])
   const [selectedWL, setSelectedWL] = useState(null)
   const [selectedTicker, setSelectedTicker] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // Watchlist management UI state
   const [showWLMenu, setShowWLMenu] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [editNameVal, setEditNameVal] = useState("")
   const [creatingWL, setCreatingWL] = useState(false)
   const [newWLName, setNewWLName] = useState("")
 
-  // Stock management — no more plain text input
   const [addingStock, setAddingStock] = useState(false)
 
-  // Batch market data from market-service
-  const [marketData, setMarketData] = useState({}) // { TICKER: { price, day_high, ... } }
+  const [marketData, setMarketData] = useState({})
+  const [marketLoading, setMarketLoading] = useState(false)
+
+  // Quick trade modal
+  const [orderModal, setOrderModal] = useState({ open: false, action: 'BUY', ticker: null, price: null })
 
   const menuRef = useRef(null)
 
@@ -88,16 +143,17 @@ export default function Watchlist() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Fetch batch market data when selected watchlist changes
   useEffect(() => {
     async function fetchMarketData() {
       const activeStks = selectedWL?.stocks?.filter(s => s.active) || []
       if (activeStks.length === 0) { setMarketData({}); return }
       const symbols = activeStks.map(s => s.stock_ticker)
       try {
+        setMarketLoading(true)
         const data = await getStockDetailsBatch(symbols)
         setMarketData(data)
       } catch { setMarketData({}) }
+      finally { setMarketLoading(false) }
     }
     fetchMarketData()
   }, [selectedWL])
@@ -132,8 +188,9 @@ export default function Watchlist() {
       setSelectedTicker(null)
       setNewWLName("")
       setCreatingWL(false)
+      toast({ message: `Watchlist "${wl.name}" created`, type: "success" })
     } catch (e) {
-      alert(e.response?.data?.error || "Failed to create watchlist")
+      toast({ message: e.response?.data?.error || "Failed to create watchlist", type: "error" })
     }
   }
 
@@ -143,8 +200,9 @@ export default function Watchlist() {
       await watchlistService.update(selectedWL.id, editNameVal.trim())
       syncWL({ ...selectedWL, name: editNameVal.trim() })
       setEditingName(false)
+      toast({ message: "Watchlist renamed", type: "success" })
     } catch (e) {
-      alert(e.response?.data?.error || "Failed to rename watchlist")
+      toast({ message: e.response?.data?.error || "Failed to rename watchlist", type: "error" })
     }
   }
 
@@ -156,8 +214,9 @@ export default function Watchlist() {
       setWatchlists(remaining)
       setSelectedWL(remaining[0] || null)
       setSelectedTicker(null)
+      toast({ message: "Watchlist deleted", type: "success" })
     } catch (e) {
-      alert(e.response?.data?.error || "Failed to delete watchlist")
+      toast({ message: e.response?.data?.error || "Failed to delete watchlist", type: "error" })
     }
   }
 
@@ -170,8 +229,9 @@ export default function Watchlist() {
       const existingStocks = selectedWL.stocks || []
       const without = existingStocks.filter(s => s.stock_ticker !== ticker)
       syncWL({ ...selectedWL, stocks: [...without, data] })
+      toast({ message: `${ticker} added to watchlist`, type: "success" })
     } catch (e) {
-      alert(e.response?.data?.error || "Failed to add stock")
+      toast({ message: e.response?.data?.error || "Failed to add stock", type: "error" })
     } finally {
       setAddingStock(false)
     }
@@ -186,9 +246,15 @@ export default function Watchlist() {
       )
       syncWL({ ...selectedWL, stocks: updatedStocks })
       if (selectedTicker === stock.stock_ticker) setSelectedTicker(null)
+      toast({ message: `${stock.stock_ticker} removed from watchlist`, type: "success" })
     } catch (e) {
-      alert(e.response?.data?.error || "Failed to remove stock")
+      toast({ message: e.response?.data?.error || "Failed to remove stock", type: "error" })
     }
+  }
+
+  function openTrade(ticker, action) {
+    const md = marketData[ticker] || marketData[ticker?.split(".")[0]] || {}
+    setOrderModal({ open: true, action, ticker, price: md.price || 0 })
   }
 
   const activeStocks = selectedWL?.stocks?.filter(s => s.active) || []
@@ -196,6 +262,7 @@ export default function Watchlist() {
   return (
     <>
       <style>{`
+        ${skeletonCSS}
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@500;600;700&display=swap');
 
         .wl-page {
@@ -377,9 +444,11 @@ export default function Watchlist() {
           border-bottom: 1px solid #f9fafb;
           transition: background 0.12s;
           gap: 0.5rem;
+          position: relative;
         }
         .wl-stock-row:hover { background: #f9fafb; }
         .wl-stock-row:hover .wl-row-del { opacity: 1; }
+        .wl-stock-row:hover .wl-row-quicktrade { opacity: 1; }
         .wl-stock-row.active { background: #ecfdf5; border-left: 3px solid #059669; padding-left: calc(1rem - 3px); }
 
         .wl-row-sym {
@@ -404,6 +473,37 @@ export default function Watchlist() {
         }
         .wl-row-del:hover { color: #dc2626; }
 
+        .wl-row-quicktrade {
+          opacity: 0;
+          display: flex;
+          gap: 0.25rem;
+          flex-shrink: 0;
+          transition: opacity 0.12s;
+        }
+        .wl-qt-btn {
+          font-family: 'Syne', sans-serif;
+          font-size: 0.6rem;
+          font-weight: 700;
+          padding: 0.2rem 0.45rem;
+          border-radius: 4px;
+          border: none;
+          cursor: pointer;
+          transition: opacity 0.12s;
+        }
+        .wl-qt-btn.buy  { background: #059669; color: #fff; }
+        .wl-qt-btn.sell { background: #dc2626; color: #fff; }
+        .wl-qt-btn:hover { opacity: 0.85; }
+
+        /* Change pill */
+        .wl-change-pill {
+          font-family: 'DM Mono', monospace;
+          font-size: 0.62rem;
+          font-weight: 700;
+          padding: 1px 6px;
+          border-radius: 4px;
+          flex-shrink: 0;
+        }
+
         /* Add stock footer */
         .wl-add-stock {
           display: flex;
@@ -412,35 +512,13 @@ export default function Watchlist() {
           padding: 0.6rem 0.75rem;
           border-top: 1px solid #f3f4f6;
         }
-        .wl-add-input {
-          flex: 1;
-          font-family: 'DM Mono', monospace;
-          font-size: 0.72rem;
-          border: 1px solid #e5e7eb;
-          border-radius: 5px;
-          padding: 0.3rem 0.5rem;
-          outline: none;
-          color: #111827;
-          text-transform: uppercase;
-          min-width: 0;
+        .wl-search-full { flex: 1 1 100%; min-width: 0; }
+        .wl-add-stock .ss-dropdown {
+          top: auto;
+          bottom: calc(100% + 6px);
+          z-index: 300;
+          min-width: 300px;
         }
-        .wl-add-input:focus { border-color: #059669; }
-        .wl-add-input::placeholder { text-transform: none; color: #d1d5db; }
-        .wl-add-btn {
-          font-family: 'Syne', sans-serif;
-          font-size: 0.7rem;
-          font-weight: 700;
-          padding: 0.3rem 0.6rem;
-          background: #059669;
-          color: #fff;
-          border: none;
-          border-radius: 5px;
-          cursor: pointer;
-          flex-shrink: 0;
-          transition: opacity 0.15s;
-        }
-        .wl-add-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-        .wl-add-btn:not(:disabled):hover { opacity: 0.88; }
 
         /* ── Right panel ── */
         .wl-detail {
@@ -502,14 +580,6 @@ export default function Watchlist() {
           transition: background 0.15s; white-space: nowrap;
         }
         .btn-view-full:hover { background: #ecfdf5; border-color: #a7f3d0; }
-        .wl-search-full { flex: 1 1 100%; min-width: 0; }
-        /* Make search dropdown open upward since search is at the bottom */
-        .wl-add-stock .ss-dropdown {
-          top: auto;
-          bottom: calc(100% + 6px);
-          z-index: 300;
-          min-width: 300px;
-        }
 
         /* Empty / loading states */
         .wl-center-state {
@@ -617,7 +687,6 @@ export default function Watchlist() {
               </div>
             )}
 
-            {/* Watchlist dropdown */}
             {showWLMenu && watchlists.length > 0 && (
               <div className="wl-dropdown">
                 {watchlists.map(wl => (
@@ -632,7 +701,6 @@ export default function Watchlist() {
               </div>
             )}
 
-            {/* Create watchlist inline form */}
             {creatingWL && (
               <div className="wl-inline-form">
                 <input
@@ -662,7 +730,7 @@ export default function Watchlist() {
           {/* Stock list */}
           <div className="wl-list-body">
             {loading ? (
-              <div className="wl-empty-msg">Loading...</div>
+              <WatchlistSkeleton />
             ) : error ? (
               <div className="wl-empty-msg">{error}</div>
             ) : !selectedWL ? (
@@ -672,6 +740,8 @@ export default function Watchlist() {
             ) : (
               activeStocks.map(stock => {
                 const md = marketData[stock.stock_ticker] || marketData[stock.stock_ticker?.split(".")[0]] || {}
+                const changePct = md.change_percent ?? null
+                const isPos = changePct == null ? true : changePct >= 0
                 return (
                   <div
                     key={stock.id}
@@ -686,11 +756,29 @@ export default function Watchlist() {
                         </div>
                       )}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                      {/* Quick trade buttons — show on hover */}
+                      <div className="wl-row-quicktrade" onClick={e => e.stopPropagation()}>
+                        <button className="wl-qt-btn buy"  onClick={() => openTrade(stock.stock_ticker, 'BUY')}>B</button>
+                        <button className="wl-qt-btn sell" onClick={() => openTrade(stock.stock_ticker, 'SELL')}>S</button>
+                      </div>
                       {md.price != null && (
-                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "0.72rem", fontWeight: 600, color: "#111827" }}>
-                          ₹{Number(md.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-                        </span>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "1px" }}>
+                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: "0.72rem", fontWeight: 600, color: "#111827" }}>
+                            ₹{Number(md.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                          </span>
+                          {changePct != null && (
+                            <span className="wl-change-pill" style={{
+                              background: isPos ? "#ecfdf5" : "#fef2f2",
+                              color: glIntensityColor(changePct, isPos),
+                            }}>
+                              {isPos ? "+" : ""}{Number(changePct).toFixed(2)}%
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {marketLoading && md.price == null && (
+                        <div style={{ width: 44 }}><div style={{ height: "0.7rem", background: "#f3f4f6", borderRadius: 4, animation: "sk-shimmer 1.4s infinite", backgroundSize: "200% 100%", backgroundImage: "linear-gradient(90deg,#f3f4f6 25%,#e5e7eb 50%,#f3f4f6 75%)" }} /></div>
                       )}
                       <button
                         className="wl-row-del"
@@ -706,7 +794,6 @@ export default function Watchlist() {
             )}
           </div>
 
-          {/* Add stock via search */}
           {selectedWL && (
             <div className="wl-add-stock">
               <StockSearch
@@ -724,6 +811,7 @@ export default function Watchlist() {
             ticker={selectedTicker}
             marketData={marketData[selectedTicker] || marketData[selectedTicker?.split(".")[0]] || {}}
             onViewFull={() => navigate(`/stock/${selectedTicker}`)}
+            onTrade={(action) => openTrade(selectedTicker, action)}
           />
         ) : (
           <div className="wl-center-state">
@@ -753,6 +841,15 @@ export default function Watchlist() {
           </div>
         )}
       </div>
+
+      {/* Quick trade modal */}
+      <OrderModal
+        isOpen={orderModal.open}
+        onClose={() => setOrderModal(prev => ({ ...prev, open: false }))}
+        stock={{ symbol: orderModal.ticker, exchange: "NSE" }}
+        initialAction={orderModal.action}
+        currentPrice={orderModal.price}
+      />
     </>
   )
 }
