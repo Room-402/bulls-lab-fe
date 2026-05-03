@@ -58,4 +58,15 @@ export async function getStockDetailsBatch(symbols) {
   return data.stock_details ?? {}
 }
 
+/**
+ * Get historical price data for charting.
+ * GET /stocks/history?symbol=<symbol>&period=<period>&interval=<interval>
+ */
+export async function getStockHistory(symbol, period, interval) {
+  const { data } = await marketApi.get("/stocks/history", {
+    params: { symbol, period, interval },
+  })
+  return data.history ?? []
+}
+
 export default marketApi

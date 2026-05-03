@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { getStockDetails } from "@/services/marketService"
+import { getStockDetails, getStockHistory } from "@/services/marketService"
 import { watchlistService } from "@/services/watchlist"
 import OrderModal from "@/components/OrderModal"
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from "recharts"
 
 /* ── tiny helpers ── */
 function fmt(n, decimals = 2) {
   if (n == null) return "—"
   if (Math.abs(n) >= 1e12) return `₹${(n / 1e12).toFixed(2)}T`
-  if (Math.abs(n) >= 1e9)  return `₹${(n / 1e9).toFixed(2)}B`
-  if (Math.abs(n) >= 1e7)  return `₹${(n / 1e7).toFixed(2)}Cr`
-  if (Math.abs(n) >= 1e5)  return `₹${(n / 1e5).toFixed(2)}L`
+  if (Math.abs(n) >= 1e9) return `₹${(n / 1e9).toFixed(2)}B`
+  if (Math.abs(n) >= 1e7) return `₹${(n / 1e7).toFixed(2)}Cr`
+  if (Math.abs(n) >= 1e5) return `₹${(n / 1e5).toFixed(2)}L`
   return `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: decimals })}`
 }
 function pct(n) {
@@ -39,6 +40,12 @@ export default function StockDetails() {
   const [addedToWl, setAddedToWl] = useState(null)   // id of wl just added to (for toast)
   const wlDropdownRef = useRef(null)
 
+  // Chart state
+  const [chartPeriod, setChartPeriod] = useState("1M")
+  const [chartData, setChartData] = useState([])
+  const [chartLoading, setChartLoading] = useState(false)
+
+  // Load stock details
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -67,6 +74,40 @@ export default function StockDetails() {
     }
     loadWatchlists()
   }, [])
+
+  // Load chart
+  useEffect(() => {
+    async function loadChart() {
+      setChartLoading(true)
+      try {
+        let period = "1mo", interval = "1d"
+        if (chartPeriod === "1D") { period = "1d"; interval = "5m" }
+        else if (chartPeriod === "1W") { period = "5d"; interval = "15m" }
+        else if (chartPeriod === "1M") { period = "1mo"; interval = "1d" }
+        else if (chartPeriod === "1Y") { period = "1y"; interval = "1d" }
+        else if (chartPeriod === "MAX") { period = "max"; interval = "1wk" }
+
+        const data = await getStockHistory(symbol, period, interval)
+        const formatted = data.map(d => {
+          let dateStr = ""
+          try {
+            const date = new Date(d.timestamp)
+            if (chartPeriod === "1D") dateStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            else if (chartPeriod === "1W") dateStr = date.toLocaleDateString([], { weekday: 'short', hour: '2-digit' })
+            else if (chartPeriod === "MAX") dateStr = date.getFullYear().toString()
+            else dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+          } catch (e) { dateStr = d.timestamp }
+          return { ...d, dateStr }
+        })
+        setChartData(formatted)
+      } catch (e) {
+        console.error("Failed to load chart", e)
+      } finally {
+        setChartLoading(false)
+      }
+    }
+    loadChart()
+  }, [symbol, chartPeriod])
 
   // Click outside to close wl dropdown
   useEffect(() => {
@@ -307,6 +348,15 @@ export default function StockDetails() {
           z-index: 500;
         }
         @keyframes sd-toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* ── chart ── */
+        .sd-chart-tabs { display: flex; gap: 0.5rem; }
+        .sd-chart-tab {
+          font-family: 'DM Mono', monospace; font-size: 0.7rem; font-weight: 600;
+          padding: 4px 10px; border-radius: 6px; border: 1px solid #e5e7eb;
+          background: #fff; color: #6b7280; cursor: pointer; transition: all 0.15s;
+        }
+        .sd-chart-tab.active { background: #059669; color: #fff; border-color: #059669; }
       `}</style>
 
       <div className="sd-page">
@@ -399,6 +449,71 @@ export default function StockDetails() {
             </div>
 
             <div className="sd-grid">
+              {/* ── Chart ── */}
+              <div className="sd-card sd-full" style={{ padding: "1.5rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "1rem" }}>
+                  <div className="sd-card-title" style={{ margin: 0 }}>Price History</div>
+                  <div className="sd-chart-tabs">
+                    {["1D", "1W", "1M", "1Y", "MAX"].map(p => (
+                      <button key={p} className={`sd-chart-tab ${chartPeriod === p ? "active" : ""}`} onClick={() => setChartPeriod(p)}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ width: "100%", height: 320, position: "relative" }}>
+                  {chartLoading && (
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.7)", zIndex: 10 }}>
+                      <div className="sd-loader" style={{ width: 24, height: 24, borderWidth: 2 }} />
+                    </div>
+                  )}
+                  {chartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#059669" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#059669" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <XAxis
+                          dataKey="dateStr"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 10, fill: "#9ca3af", fontFamily: "DM Mono" }}
+                          dy={10}
+                          minTickGap={20}
+                        />
+                        <YAxis
+                          domain={['auto', 'auto']}
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 10, fill: "#9ca3af", fontFamily: "DM Mono" }}
+                          tickFormatter={(val) => `₹${val}`}
+                        />
+                        <Tooltip
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                          labelStyle={{ fontFamily: 'DM Mono', fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}
+                          itemStyle={{ fontFamily: 'DM Mono', fontSize: '14px', color: '#111827', fontWeight: 600 }}
+                          formatter={(value) => [`₹${Number(value).toFixed(2)}`, "Price"]}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="price"
+                          stroke="#059669"
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#colorPrice)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    !chartLoading && <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: "0.8rem" }}>No chart data available for this period.</div>
+                  )}
+                </div>
+              </div>
+
               {/* ── Day Range ── */}
               <div className="sd-card">
                 <div className="sd-card-title">Today's Range</div>

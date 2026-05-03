@@ -1,60 +1,12 @@
-import { useState } from "react"
-import { NavLink, Outlet, Navigate } from "react-router-dom"
-
-/* ─── DUMMY DATA ─────────────────────────────────────────────────────────── */
-const OVERVIEW = {
-  invested: 76419, current: 73659, overallLoss: -2760.73, overallLossPct: -3.61,
-  todayGain: 0, todayGainPct: 0,
-  breakup: [
-    { label: "Equity",       pct: 82, color: "#059669" },
-    { label: "Mutual Funds", pct: 18, color: "#3b82f6" },
-  ],
-  assets: [
-    { type: "Equity",       pct: 82, invested: 62999, current: 60180, gl: -2819.86, glPct: -4.48, dayGl: 0, dayGlPct: 0 },
-    { type: "Mutual Funds", pct: 18, invested: 13420, current: 13479, gl: 59.12,    glPct: 0.44,  dayGl: 0, dayGlPct: 0 },
-  ],
-}
-
-const HOLDINGS = [
-  { name: "TATAPOWER",  qty: 10, avg: 388.01, ltp: 378.00, inv: 3880,  cur: 3780,  gl: -100.14,  glPct: -2.58,  dayGl: 0, dayGlPct: 0 },
-  { name: "SONACOMS",   qty: 25, avg: 521.25, ltp: 532.10, inv: 13031, cur: 13303, gl: 271.32,   glPct: 2.08,   dayGl: 0, dayGlPct: 0 },
-  { name: "PRAJIND",    qty: 35, avg: 417.30, ltp: 311.45, inv: 14605, cur: 10901, gl: -3704.72, glPct: -25.37, dayGl: 0, dayGlPct: 0 },
-  { name: "NIFTYIETF",  qty: 10, avg: 289.57, ltp: 287.97, inv: 2895,  cur: 2880,  gl: -16.02,   glPct: -0.55,  dayGl: 0, dayGlPct: 0 },
-  { name: "NEWGEN",     qty: 29, avg: 648.12, ltp: 556.90, inv: 18795, cur: 16150, gl: -2645.35, glPct: -14.07, dayGl: 0, dayGlPct: 0 },
-  { name: "FEDERALBNK", qty: 45, avg: 217.60, ltp: 292.60, inv: 9791,  cur: 13167, gl: 3375.05,  glPct: 34.47,  dayGl: 0, dayGlPct: 0 },
-]
-
-const EQUITY_STATS = { invested: 62999, current: 60180, gl: -2819.86, glPct: -4.48, todayGain: 0, todayGainPct: 0 }
-
-const SECTORS = [
-  { name: "IT - Software",                       pct: 26.8, color: "#6366f1" },
-  { name: "Castings/Forgings",                   pct: 22.1, color: "#059669" },
-  { name: "Bank - Private",                      pct: 21.9, color: "#3b82f6" },
-  { name: "Engineering - Industrial Equipments", pct: 18.1, color: "#f59e0b" },
-  { name: "Power Generation/Distribution",       pct: 6.3,  color: "#ec4899" },
-  { name: "Others",                              pct: 4.8,  color: "#9ca3af" },
-]
-
-const SECTOR_RETURNS = [
-  { name: "Bank - Private",                      ret: 34.47  },
-  { name: "Castings/Forgings",                   ret: 2.08   },
-  { name: "Power Generation/Distribution",       ret: -2.58  },
-  { name: "IT - Software",                       ret: -14.07 },
-  { name: "Engineering - Industrial Equipments", ret: -25.37 },
-  { name: "Others",                              ret: -0.55  },
-]
-
-const TOP_LOSERS = [
-  { name: "TATAPOWER",  wkHigh: 416.80, ltp: 378.00, dayGain: 0 },
-  { name: "FEDERALBNK", wkHigh: 298.25, ltp: 292.60, dayGain: 0 },
-  { name: "SONACOMS",   wkHigh: 559.50, ltp: 532.10, dayGain: 0 },
-  { name: "NIFTYIETF",  wkHigh: 328.24, ltp: 287.97, dayGain: 0 },
-]
+import { useState, useEffect, useMemo } from "react"
+import { NavLink, Outlet, useOutletContext } from "react-router-dom"
+import { portfolioService } from "../../services/portfolioService"
+import { getStockDetailsBatch } from "../../services/marketService"
 
 /* ─── HELPERS ────────────────────────────────────────────────────────────── */
-const fmt  = (n) => Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })
-const fmtN = (n) => n.toLocaleString("en-IN",           { maximumFractionDigits: 2 })
-const pos  = (n) => n >= 0
+const fmt = (n) => Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })
+const fmtN = (n) => (n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })
+const pos = (n) => n >= 0
 
 /* ─── CSS ────────────────────────────────────────────────────────────────── */
 const CSS = `
@@ -237,7 +189,7 @@ const CSS = `
   font-weight: 600;
   background: #f9fafb;
 }
-.h-table th:first-child { text-align: left; }
+.h-table th:first-child, .h-table th:nth-child(2) { text-align: left; }
 .h-table td {
   padding: 0.8rem 0.75rem;
   border-bottom: 1px solid #f3f4f6;
@@ -246,10 +198,11 @@ const CSS = `
   color: #111827;
   text-align: right;
 }
-.h-table td:first-child { text-align: left; }
+.h-table td:first-child, .h-table td:nth-child(2) { text-align: left; }
 .h-table tr:last-child td { border-bottom: none; }
 .h-table tr:hover td { background: #f9fafb; cursor: pointer; }
 .stock-name { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.78rem; color: #111827; }
+.stock-company { font-size: 0.65rem; color: #6b7280; margin-top: 2px; }
 .gl-cell { display: flex; flex-direction: column; align-items: flex-end; gap: 0.1rem; }
 
 /* Sector bar */
@@ -331,6 +284,8 @@ const CSS = `
 /* Two col */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+.loading { padding: 2rem; text-align: center; color: #6b7280; font-size: 0.8rem; }
 `
 
 /* ─── DONUT ──────────────────────────────────────────────────────────────── */
@@ -354,33 +309,146 @@ function Donut({ segments }) {
   )
 }
 
+/* ─── DATA HOOK ──────────────────────────────────────────────────────────── */
+function usePortfolioData() {
+  const [holdings, setHoldings] = useState([])
+  const [marketData, setMarketData] = useState({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      try {
+        setLoading(true)
+        const holds = await portfolioService.getHoldings()
+        setHoldings(holds || [])
+
+        if (holds && holds.length > 0) {
+          const tickers = holds.map(h => h.stock_ticker)
+          const mData = await getStockDetailsBatch(tickers)
+          setMarketData(mData)
+        }
+      } catch (err) {
+        console.error("Failed to load portfolio", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [])
+
+  const data = useMemo(() => {
+    let invested = 0
+    let current = 0
+    const sectorMap = {}
+
+    const enrichedHoldings = holdings.map(h => {
+      const details = marketData[h.stock_ticker] || {}
+      const ltp = details.price || h.avg_buy_price || 0
+      const company = details.company_name || ""
+      const dayHigh = details.day_high || 0
+      const dayLow = details.day_low || 0
+      const peRatio = details.pe_ratio || "-"
+      const sector = details.other_details?.sector || details.other_details?.industry || "Others"
+
+      const inv = h.avg_buy_price * h.total_quantity
+      const cur = ltp * h.total_quantity
+      const gl = cur - inv
+      const glPct = inv > 0 ? (gl / inv) * 100 : 0
+
+      invested += inv
+      current += cur
+
+      if (!sectorMap[sector]) {
+        sectorMap[sector] = { invested: 0, current: 0 }
+      }
+      sectorMap[sector].invested += inv
+      sectorMap[sector].current += cur
+
+      return {
+        name: h.stock_ticker,
+        company,
+        sector,
+        qty: h.total_quantity,
+        avg: h.avg_buy_price,
+        ltp,
+        dayHigh,
+        dayLow,
+        peRatio,
+        inv,
+        cur,
+        gl,
+        glPct,
+      }
+    })
+
+    const overallLoss = current - invested
+    const overallLossPct = invested > 0 ? (overallLoss / invested) * 100 : 0
+
+    const COLORS = ["#6366f1", "#059669", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", "#14b8a6", "#f43f5e", "#9ca3af"]
+    let colorIndex = 0
+    const computedSectors = Object.keys(sectorMap).map(sec => {
+      const s = sectorMap[sec]
+      const pct = current > 0 ? (s.current / current) * 100 : 0
+      const ret = s.invested > 0 ? ((s.current - s.invested) / s.invested) * 100 : 0
+      const color = COLORS[colorIndex % COLORS.length]
+      colorIndex++
+      return { name: sec, pct: Number(pct.toFixed(1)), ret: Number(ret.toFixed(2)), color }
+    }).sort((a, b) => b.pct - a.pct)
+
+    return {
+      holdings: enrichedHoldings,
+      sectors: computedSectors,
+      invested,
+      current,
+      overallLoss,
+      overallLossPct,
+      loading
+    }
+  }, [holdings, marketData, loading])
+
+  return data
+}
+
 /* ─── OVERVIEW ───────────────────────────────────────────────────────────── */
 function PortfolioOverview() {
-  const o = OVERVIEW
+  const { invested, current, overallLoss, overallLossPct, loading } = useOutletContext()
+
+  if (loading) return <div className="loading">Loading portfolio...</div>
+
+  // Mocking breakup to keep UI rich even if we only have equity right now
+  const breakup = [
+    { label: "Equity", pct: 100, color: "#059669" },
+    { label: "Mutual Funds", pct: 0, color: "#3b82f6" },
+  ]
+  const assets = [
+    { type: "Equity", pct: 100, invested, current, gl: overallLoss, glPct: overallLossPct, dayGl: 0, dayGlPct: 0 },
+    { type: "Mutual Funds", pct: 0, invested: 0, current: 0, gl: 0, glPct: 0, dayGl: 0, dayGlPct: 0 },
+  ]
+
   return (
     <div className="pf-wrap">
       <div className="stat-row">
         <div className="stat-card">
           <div className="stat-label">Invested Amount</div>
-          <div className="stat-value">₹{fmtN(o.invested)}</div>
+          <div className="stat-value">₹{fmtN(invested)}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Current Value</div>
-          <div className="stat-value">₹{fmtN(o.current)}</div>
+          <div className="stat-value">₹{fmtN(current)}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Overall {pos(o.overallLoss) ? "Gain" : "Loss"}</div>
-          <div className={`stat-value ${pos(o.overallLoss) ? "green" : "red"}`}>
-            {pos(o.overallLoss) ? "+" : "-"}₹{fmt(o.overallLoss)}
+          <div className="stat-label">Overall {pos(overallLoss) ? "Gain" : "Loss"}</div>
+          <div className={`stat-value ${pos(overallLoss) ? "green" : "red"}`}>
+            {pos(overallLoss) ? "+" : "-"}₹{fmt(overallLoss)}
           </div>
-          <div className={`stat-sub ${pos(o.overallLoss) ? "green" : "red"}`}>
-            {pos(o.overallLossPct) ? "+" : ""}{o.overallLossPct}%
+          <div className={`stat-sub ${pos(overallLoss) ? "green" : "red"}`}>
+            {pos(overallLossPct) ? "+" : ""}{fmtN(overallLossPct)}%
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Today's Gain</div>
-          <div className="stat-value muted">₹{fmtN(o.todayGain)}</div>
-          <div className="stat-sub muted">{o.todayGainPct}%</div>
+          <div className="stat-value muted">₹{fmtN(0)}</div>
+          <div className="stat-sub muted">0.00%</div>
         </div>
       </div>
 
@@ -389,14 +457,14 @@ function PortfolioOverview() {
         <div className="card" style={{ padding: "1.25rem" }}>
           <div className="breakup-row">
             <div className="donut-wrap">
-              <Donut segments={o.breakup} />
+              <Donut segments={breakup} />
               <div className="donut-label">
-                <strong>{o.breakup[0].pct}%</strong>
+                <strong>{breakup[0].pct}%</strong>
                 <span>Equity</span>
               </div>
             </div>
             <div className="legend-list">
-              {o.breakup.map(b => (
+              {breakup.map(b => (
                 <div key={b.label} className="legend-item">
                   <div className="legend-dot" style={{ background: b.color }} />
                   <span style={{ color: "#374151" }}>{b.label}</span>
@@ -419,7 +487,7 @@ function PortfolioOverview() {
               </tr>
             </thead>
             <tbody>
-              {o.assets.map(a => (
+              {assets.map(a => (
                 <tr key={a.type}>
                   <td className="type-cell">
                     {a.type}
@@ -429,7 +497,7 @@ function PortfolioOverview() {
                   <td>₹{fmtN(a.current)}</td>
                   <td>
                     <div className={pos(a.gl) ? "green" : "red"}>{pos(a.gl) ? "+" : "-"}₹{fmt(a.gl)}</div>
-                    <div className={`stat-sub ${pos(a.gl) ? "green" : "red"}`}>{pos(a.glPct) ? "+" : ""}{a.glPct}%</div>
+                    <div className={`stat-sub ${pos(a.gl) ? "green" : "red"}`}>{pos(a.glPct) ? "+" : ""}{fmtN(a.glPct)}%</div>
                   </td>
                   <td>
                     <div className="muted">₹{fmtN(a.dayGl)}</div>
@@ -448,68 +516,92 @@ function PortfolioOverview() {
 /* ─── EQUITY ─────────────────────────────────────────────────────────────── */
 function PortfolioEquity() {
   const [driversTab, setDriversTab] = useState("losers")
-  const s = EQUITY_STATS
+  const { holdings, sectors, invested, current, overallLoss, overallLossPct, loading } = useOutletContext()
+
+  if (loading) return <div className="loading">Loading portfolio...</div>
+
+  // Generate top drivers
+  const sortedByGl = [...holdings].sort((a, b) => b.glPct - a.glPct)
+  const topGainers = sortedByGl.slice(0, 5)
+  const topLosers = [...sortedByGl].reverse().slice(0, 5)
+
+  const driversList = driversTab === "gainers" ? topGainers : topLosers
+
   return (
     <div className="pf-wrap">
       <div className="stat-row">
         <div className="stat-card">
           <div className="stat-label">Invested Amount</div>
-          <div className="stat-value">₹{fmtN(s.invested)}</div>
+          <div className="stat-value">₹{fmtN(invested)}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Current Value</div>
-          <div className="stat-value">₹{fmtN(s.current)}</div>
+          <div className="stat-value">₹{fmtN(current)}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Overall {pos(s.gl) ? "Gain" : "Loss"}</div>
-          <div className={`stat-value ${pos(s.gl) ? "green" : "red"}`}>
-            {pos(s.gl) ? "+" : "-"}₹{fmt(s.gl)}
+          <div className="stat-label">Overall {pos(overallLoss) ? "Gain" : "Loss"}</div>
+          <div className={`stat-value ${pos(overallLoss) ? "green" : "red"}`}>
+            {pos(overallLoss) ? "+" : "-"}₹{fmt(overallLoss)}
           </div>
-          <div className={`stat-sub ${pos(s.gl) ? "green" : "red"}`}>{pos(s.glPct) ? "+" : ""}{s.glPct}%</div>
+          <div className={`stat-sub ${pos(overallLoss) ? "green" : "red"}`}>{pos(overallLossPct) ? "+" : ""}{fmtN(overallLossPct)}%</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Today's Gain</div>
-          <div className="stat-value muted">₹{fmtN(s.todayGain)}</div>
-          <div className="stat-sub muted">{s.todayGainPct}%</div>
+          <div className="stat-value muted">₹{fmtN(0)}</div>
+          <div className="stat-sub muted">0.00%</div>
         </div>
       </div>
 
       <div className="section">
         <div className="holdings-header">
-          <div className="holdings-count">Holdings &nbsp;<strong>{HOLDINGS.length}</strong></div>
+          <div className="holdings-count">Holdings &nbsp;<strong>{holdings.length}</strong></div>
           <button className="btn-exit">Select &amp; Exit</button>
         </div>
-        <div className="card">
-          <table className="h-table">
+        <div className="card" style={{ overflowX: "auto" }}>
+          <table className="h-table" style={{ minWidth: "900px" }}>
             <thead>
               <tr>
-                <th>Name</th><th>Qty</th><th>Avg. Price</th><th>LTP</th>
-                <th>Inv. Amt.</th><th>Current Val.</th><th>Overall G/L</th><th>Day's G/L</th>
+                <th>Stock</th>
+                <th>Company</th>
+                <th>Qty</th>
+                <th>Avg. Price</th>
+                <th>LTP</th>
+                <th>Day H/L</th>
+                <th>P/E Ratio</th>
+                <th>Inv. Amt.</th>
+                <th>Current Val.</th>
+                <th>Overall G/L</th>
               </tr>
             </thead>
             <tbody>
-              {HOLDINGS.map(h => (
+              {holdings.map(h => (
                 <tr key={h.name}>
                   <td><div className="stock-name">{h.name}</div></td>
+                  <td><div className="stock-company">{h.company || "-"}</div></td>
                   <td>{h.qty}</td>
                   <td>₹{fmtN(h.avg)}</td>
                   <td>₹{fmtN(h.ltp)}</td>
+                  <td>
+                    <div className="muted" style={{ fontSize: "0.65rem" }}>
+                      H: ₹{fmtN(h.dayHigh)}<br />L: ₹{fmtN(h.dayLow)}
+                    </div>
+                  </td>
+                  <td><span className="muted">{h.peRatio !== "-" ? fmtN(h.peRatio) : "-"}</span></td>
                   <td>₹{fmtN(h.inv)}</td>
                   <td>₹{fmtN(h.cur)}</td>
                   <td>
                     <div className="gl-cell">
                       <span className={pos(h.gl) ? "green" : "red"}>{pos(h.gl) ? "+" : "-"}₹{fmt(h.gl)}</span>
-                      <span className={`stat-sub ${pos(h.gl) ? "green" : "red"}`}>{pos(h.glPct) ? "+" : ""}{h.glPct}%</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="gl-cell">
-                      <span className="muted">₹{fmtN(h.dayGl)}</span>
-                      <span className="stat-sub muted">{h.dayGlPct}%</span>
+                      <span className={`stat-sub ${pos(h.gl) ? "green" : "red"}`}>{pos(h.glPct) ? "+" : ""}{fmtN(h.glPct)}%</span>
                     </div>
                   </td>
                 </tr>
               ))}
+              {holdings.length === 0 && (
+                <tr>
+                  <td colSpan="10" style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>No holdings found.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -517,7 +609,7 @@ function PortfolioEquity() {
 
       <div className="tpin-notice">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
         Start selling your stocks without TPIN
       </div>
@@ -526,12 +618,12 @@ function PortfolioEquity() {
         <div className="section-title">Portfolio Allocation</div>
         <div className="card" style={{ padding: "1.25rem" }}>
           <div className="sector-bar-wrap">
-            {SECTORS.map(s => (
+            {sectors.map(s => (
               <div key={s.name} className="sector-seg" style={{ flex: s.pct, background: s.color }} title={`${s.name}: ${s.pct}%`} />
             ))}
           </div>
           <div className="sector-list">
-            {SECTORS.map(s => (
+            {sectors.map(s => (
               <div key={s.name} className="sector-row">
                 <div className="sector-dot" style={{ background: s.color }} />
                 <span className="sector-name">{s.name}</span>
@@ -548,14 +640,14 @@ function PortfolioEquity() {
           <div className="card" style={{ padding: "1.25rem" }}>
             <p style={{ fontSize: "0.7rem", color: "#6b7280", marginBottom: "1rem" }}>Which sectors are giving you the best returns</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {SECTOR_RETURNS.map(r => (
+              {sectors.map(r => (
                 <div key={r.name} style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                   <span style={{ fontSize: "0.72rem", color: "#374151", width: "180px", flexShrink: 0 }}>{r.name}</span>
                   <div className="ret-bar-bg">
                     <div className="ret-bar-fill" style={{ width: `${Math.min(Math.abs(r.ret), 100)}%`, background: r.ret >= 0 ? "#059669" : "#dc2626" }} />
                   </div>
                   <span style={{ fontFamily: "'DM Mono',monospace", fontSize: "0.72rem", width: "52px", textAlign: "right" }}
-                        className={r.ret >= 0 ? "green" : "red"}>
+                    className={r.ret >= 0 ? "green" : "red"}>
                     {r.ret > 0 ? "+" : ""}{r.ret}%
                   </span>
                 </div>
@@ -570,26 +662,31 @@ function PortfolioEquity() {
             <p style={{ fontSize: "0.7rem", color: "#6b7280", marginBottom: "0.75rem" }}>Which stocks are giving you the best and worst returns</p>
             <div className="drivers-tabs">
               <button className={`dtab ${driversTab === "gainers" ? "active" : ""}`} onClick={() => setDriversTab("gainers")}>Top Gainers</button>
-              <button className={`dtab ${driversTab === "losers"  ? "active" : ""}`} onClick={() => setDriversTab("losers")}>Top Losers</button>
+              <button className={`dtab ${driversTab === "losers" ? "active" : ""}`} onClick={() => setDriversTab("losers")}>Top Losers</button>
             </div>
             <table className="d-table">
               <thead>
                 <tr>
                   <th>Stock</th>
-                  <th style={{textAlign:"right"}}>52 W/H</th>
-                  <th style={{textAlign:"right"}}>LTP</th>
-                  <th style={{textAlign:"right"}}>Day's Gain</th>
+                  <th style={{ textAlign: "right" }}>Day High</th>
+                  <th style={{ textAlign: "right" }}>LTP</th>
+                  <th style={{ textAlign: "right" }}>Overall Gain</th>
                 </tr>
               </thead>
               <tbody>
-                {TOP_LOSERS.map(s => (
+                {driversList.map(s => (
                   <tr key={s.name}>
                     <td>{s.name}</td>
-                    <td>₹{fmtN(s.wkHigh)}</td>
+                    <td><span className="muted">₹{fmtN(s.dayHigh)}</span></td>
                     <td>₹{fmtN(s.ltp)}</td>
-                    <td className="muted">{s.dayGain}%</td>
+                    <td className={pos(s.glPct) ? "green" : "red"}>{pos(s.glPct) ? "+" : ""}{fmtN(s.glPct)}%</td>
                   </tr>
                 ))}
+                {driversList.length === 0 && (
+                  <tr>
+                    <td colSpan="4" className="muted" style={{ textAlign: "center" }}>No data available</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -601,14 +698,16 @@ function PortfolioEquity() {
 
 /* ─── LAYOUT ─────────────────────────────────────────────────────────────── */
 export default function Portfolio() {
+  const data = usePortfolioData()
+
   return (
     <>
       <style>{CSS}</style>
       <div className="pf-subnav">
         <NavLink to="/portfolio/overview" className={({ isActive }) => `pf-tab${isActive ? " active" : ""}`}>Overview</NavLink>
-        <NavLink to="/portfolio/equity"   className={({ isActive }) => `pf-tab${isActive ? " active" : ""}`}>Equity</NavLink>
+        <NavLink to="/portfolio/equity" className={({ isActive }) => `pf-tab${isActive ? " active" : ""}`}>Equity</NavLink>
       </div>
-      <Outlet />
+      <Outlet context={data} />
     </>
   )
 }
