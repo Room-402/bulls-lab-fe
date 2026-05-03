@@ -88,6 +88,7 @@ export default function StockDetails() {
         else if (chartPeriod === "MAX") { period = "max"; interval = "1wk" }
 
         const data = await getStockHistory(symbol, period, interval)
+        console.log("history sample:", data[0], "total:", data.length)
         const formatted = data.map(d => {
           let dateStr = ""
           try {
@@ -135,7 +136,82 @@ export default function StockDetails() {
     }
   }
 
-  const d = stock?.other_details ?? {}
+  const other = stock?.other_details ?? {}
+  // Support both flat (legacy) and nested (current) API response shapes
+  const isNested = !!(other.price || other.summaryDetail || other.financialData)
+  const priceInfo    = isNested ? (other.price ?? {})          : other
+  const summaryInfo  = isNested ? (other.summaryDetail ?? {})  : other
+  const financial    = isNested ? (other.financialData ?? {})  : other
+  const keyStats     = isNested ? (other.defaultKeyStatistics ?? {}) : other
+  const quoteInfo    = isNested ? (other.quoteType ?? {})      : other
+  const assetProfile = isNested ? (other.assetProfile ?? other.summaryProfile ?? {}) : other
+
+  const d = {
+    // price / change
+    regularMarketChange:        priceInfo.regularMarketChange,
+    regularMarketChangePercent: priceInfo.regularMarketChangePercent,
+    regularMarketVolume:        priceInfo.regularMarketVolume,
+    // quote
+    symbol:           quoteInfo.symbol        ?? priceInfo.symbol,
+    longName:         quoteInfo.longName       ?? priceInfo.longName,
+    exchange:         quoteInfo.exchange       ?? priceInfo.exchange,
+    fullExchangeName: quoteInfo.exchangeName   ?? priceInfo.exchangeName,
+    // summary
+    previousClose:            summaryInfo.previousClose,
+    open:                     summaryInfo.open,
+    volume:                   summaryInfo.volume ?? priceInfo.regularMarketVolume,
+    averageDailyVolume10Day:  summaryInfo.averageDailyVolume10days ?? summaryInfo.averageDailyVolume10Day,
+    fiftyTwoWeekLow:          summaryInfo.fiftyTwoWeekLow,
+    fiftyTwoWeekHigh:         summaryInfo.fiftyTwoWeekHigh,
+    dividendRate:             summaryInfo.dividendRate,
+    dividendYield:            summaryInfo.dividendYield,
+    payoutRatio:              summaryInfo.payoutRatio,
+    fiveYearAvgDividendYield: summaryInfo.fiveYearAvgDividendYield,
+    trailingPE:               summaryInfo.trailingPE,
+    forwardPE:                summaryInfo.forwardPE ?? keyStats.forwardPE,
+    beta:                     summaryInfo.beta ?? keyStats.beta,
+    marketCap:                summaryInfo.marketCap,
+    // key stats
+    enterpriseValue:  keyStats.enterpriseValue,
+    pegRatio:         keyStats.pegRatio,
+    priceToBook:      keyStats.priceToBook,
+    trailingEps:      keyStats.trailingEps,
+    netIncomeToCommon: keyStats.netIncomeToCommon,
+    // financial data
+    targetHighPrice:          financial.targetHighPrice,
+    targetLowPrice:           financial.targetLowPrice,
+    targetMeanPrice:          financial.targetMeanPrice,
+    targetMedianPrice:        financial.targetMedianPrice,
+    recommendationKey:        financial.recommendationKey,
+    numberOfAnalystOpinions:  financial.numberOfAnalystOpinions,
+    totalCash:                financial.totalCash,
+    totalDebt:                financial.totalDebt,
+    debtToEquity:             financial.debtToEquity,
+    currentRatio:             financial.currentRatio,
+    totalRevenue:             financial.totalRevenue,
+    returnOnAssets:           financial.returnOnAssets,
+    returnOnEquity:           financial.returnOnEquity,
+    revenueGrowth:            financial.revenueGrowth,
+    earningsGrowth:           financial.earningsGrowth,
+    grossMargins:             financial.grossMargins,
+    ebitdaMargins:            financial.ebitdaMargins,
+    operatingMargins:         financial.operatingMargins,
+    profitMargins:            financial.profitMargins,
+    freeCashflow:             financial.freeCashflow,
+    ebitda:                   financial.ebitda,
+    // asset profile
+    sectorDisp:           assetProfile.sectorDisp,
+    industryDisp:         assetProfile.industryDisp,
+    longBusinessSummary:  assetProfile.longBusinessSummary,
+    website:              assetProfile.website,
+    address1:             assetProfile.address1,
+    address2:             assetProfile.address2,
+    city:                 assetProfile.city,
+    zip:                  assetProfile.zip,
+    country:              assetProfile.country,
+    companyOfficers:      assetProfile.companyOfficers,
+  }
+
   const priceChange = d.regularMarketChange
   const priceChangePct = d.regularMarketChangePercent
   const isPositive = priceChange >= 0
